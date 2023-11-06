@@ -39,9 +39,9 @@ build_kernel()
 		fi
 
 		if [ "${V}" = "guest" ]; then
-			BRANCH="${KERNEL_GUEST_BRANCH}"
+			TAG="${KERNEL_GUEST_TAG}"
 		else
-			BRANCH="${KERNEL_HOST_BRANCH}"
+			TAG="${KERNEL_HOST_TAG}"
 		fi
 
 		# If ${KERNEL_GIT_URL} is ever changed, 'current' remote will be out
@@ -68,10 +68,10 @@ build_kernel()
 
 		pushd ${V} >/dev/null
 			run_cmd git fetch current
-			run_cmd git checkout current/${BRANCH}
+			run_cmd git checkout -b ${TAG} refs/tags/${TAG}
 			COMMIT=$(git log --format="%h" -1 HEAD)
 
-			run_cmd "cp /boot/config-$(uname -r) .config"
+			run_cmd "cp /boot/kernel-config .config"
 			run_cmd ./scripts/config --set-str LOCALVERSION "$VER-$COMMIT"
 			run_cmd ./scripts/config --disable LOCALVERSION_AUTO
 			run_cmd ./scripts/config --enable  EXPERT
@@ -84,7 +84,8 @@ build_kernel()
 			run_cmd ./scripts/config --disable SYSTEM_TRUSTED_KEYS
 			run_cmd ./scripts/config --disable SYSTEM_REVOCATION_KEYS
 			run_cmd ./scripts/config --disable MODULE_SIG_KEY
-			run_cmd ./scripts/config --module  SEV_GUEST
+                        # Embed SEV_GUEST into the kernel to enable to use /dev/sev-guest from initrd.
+			run_cmd ./scripts/config --enable  SEV_GUEST
 			run_cmd ./scripts/config --disable IOMMU_DEFAULT_PASSTHROUGH
 			run_cmd ./scripts/config --disable PREEMPT_COUNT
 			run_cmd ./scripts/config --disable PREEMPTION
@@ -126,7 +127,8 @@ build_install_ovmf()
 		GCCVERS="GCC5"
 	fi
 
-	BUILD_CMD="nice build -q --cmd-len=64436 -DDEBUG_ON_SERIAL_PORT=TRUE -n $(getconf _NPROCESSORS_ONLN) ${GCCVERS:+-t $GCCVERS} -a X64 -p OvmfPkg/OvmfPkgX64.dsc"
+        # Use AmdSevX64 to use measured boot with DKB.
+        BUILD_CMD="nice build -q --cmd-len=64436 -DDEBUG_ON_SERIAL_PORT=TRUE -n $(getconf _NPROCESSORS_ONLN) ${GCCVERS:+-t $GCCVERS} -a X64 -p OvmfPkg/AmdSev/AmdSevX64.dsc"
 
 	# initialize git repo, or update existing remote to currently configured one
 	if [ -d ovmf ]; then
@@ -138,7 +140,7 @@ build_install_ovmf()
 		fi
 		popd >/dev/null
 	else
-		run_cmd git clone --single-branch -b ${OVMF_BRANCH} ${OVMF_GIT_URL} ovmf
+		run_cmd git clone --single-branch -b ${OVMF_TAG} ${OVMF_GIT_URL} ovmf
 		pushd ovmf >/dev/null
 		run_cmd git remote add current ${OVMF_GIT_URL}
 		popd >/dev/null
@@ -146,15 +148,15 @@ build_install_ovmf()
 
 	pushd ovmf >/dev/null
 		run_cmd git fetch current
-		run_cmd git checkout current/${OVMF_BRANCH}
+		run_cmd git checkout -b ${OVMF_TAG} refs/tags/${OVMF_TAG}
 		run_cmd git submodule update --init --recursive
+                touch OvmfPkg/AmdSev/Grub/grub.efi
 		run_cmd make -C BaseTools
 		. ./edksetup.sh --reconfig
 		run_cmd $BUILD_CMD
 
 		mkdir -p $DEST
-		run_cmd cp -f Build/OvmfX64/DEBUG_$GCCVERS/FV/OVMF_CODE.fd $DEST
-		run_cmd cp -f Build/OvmfX64/DEBUG_$GCCVERS/FV/OVMF_VARS.fd $DEST
+		run_cmd cp -f Build/AmdSev/DEBUG_$GCCVERS/FV/OVMF.fd $DEST
 
 		COMMIT=$(git log --format="%h" -1 HEAD)
 		run_cmd echo $COMMIT >../source-commit.ovmf
@@ -175,7 +177,7 @@ build_install_qemu()
 		fi
 		popd >/dev/null
 	else
-		run_cmd git clone --single-branch -b ${QEMU_BRANCH} ${QEMU_GIT_URL} qemu
+		run_cmd git clone --single-branch -b ${QEMU_TAG} ${QEMU_GIT_URL} qemu
 		pushd qemu >/dev/null
 		run_cmd git remote add current ${QEMU_GIT_URL}
 		popd >/dev/null
@@ -185,7 +187,7 @@ build_install_qemu()
 
 	pushd qemu >/dev/null
 		run_cmd git fetch current
-		run_cmd git checkout current/${QEMU_BRANCH}
+		run_cmd git checkout -b ${QEMU_TAG} refs/tags/${QEMU_TAG}
 		run_cmd ./configure --target-list=x86_64-softmmu --prefix=$DEST
 		run_cmd $MAKE
 		run_cmd $MAKE install
