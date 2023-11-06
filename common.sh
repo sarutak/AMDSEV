@@ -188,7 +188,7 @@ build_install_qemu()
 	pushd qemu >/dev/null
 		run_cmd git fetch current
 		run_cmd git checkout -b ${QEMU_TAG} refs/tags/${QEMU_TAG}
-		run_cmd ./configure --target-list=x86_64-softmmu --prefix=$DEST
+		run_cmd ./configure ${QEMU_CONFIGURE_OPTS:-"--target-list=x86_64-softmmu --prefix=$DEST"}
 		run_cmd $MAKE
 		run_cmd $MAKE install
 
